@@ -1,0 +1,149 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  ASSEMBLED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+// 1. User Model
+model User {
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  password        String
+  phone           String?
+  avatar          String?
+  role            Role     @default(USER)
+  tier            String   @default("Member")
+  shippingAddress String?
+  isSuspended     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orders          Order[]
+}
+
+// 2. Category Model
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 3. Product Fleet Model
+model Product {
+  id                  String      @id @default(uuid())
+  name                String
+  modelCode           String      @unique
+  category            String
+  badge               String?
+  price               Float
+  originalPrice       Float?
+  stock               Int         @default(10)
+  speed               String?
+  range               String?
+  power               String?
+  shortDescription    String?
+  description         String?
+  image               String
+  gallery             String[]
+  videoUrl            String?
+  colors              Json?       // [{ id, name, hex, image }]
+  batteryVariants     Json?       // [{ name, range, extraPrice }]
+  features            String[]
+  specifications      Json?       // [{ label, value }]
+  whatsInTheBox       String[]
+  warrantyAndShipping Json?       // { warranty, trialPeriod, shipping, dispatchTime }
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  orderItems          OrderItem[]
+}
+
+// 4. Order Model (With Receipt Proof)
+model Order {
+  id                 String      @id @default(uuid())
+  orderNumber        String      @unique
+  userId             String?
+  user               User?       @relation(fields: [userId], references: [id])
+  customerName       String
+  customerEmail      String
+  customerPhone      String
+  shippingAddress    String
+  city               String
+  postalCode         String
+  country            String      @default("United States")
+  
+  subtotal           Float
+  discountAmount     Float       @default(0)
+  tax                Float       @default(0)
+  totalDue           Float
+  
+  paymentMethod      String      @default("BANK_TRANSFER")
+  senderAccountName  String
+  transactionRef     String?
+  receiptFileUrl     String
+  status             OrderStatus @default(PENDING)
+
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  items              OrderItem[]
+}
+
+// 5. Order Item Model
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  name      String
+  colorName String
+  price     Float
+  quantity  Int
+}
+
+// 6. Contact Inquiries Model
+model ContactQuery {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String?
+  topic     String
+  model     String
+  message   String
+  isResolved Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// 7. Corporate Banking Model
+model BankSetting {
+  id                 String   @id @default("singleton-id")
+  bankName           String
+  accountTitle       String
+  accountNumberOrIban String
+  swiftBic           String
+  branchAddress      String?
+  cryptoUsdtAddress  String?
+  updatedAt          DateTime @updatedAt
+}
