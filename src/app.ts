@@ -1,8 +1,8 @@
 import express from "express";
 import cors from "cors";
-import path from "path";
 import helmet from "helmet";
 import morgan from "morgan";
+import { baseUploadDir } from "./config/multer";
 
 // Route imports
 import authRoutes from "./routes/authRoutes";
@@ -28,7 +28,7 @@ app.use(morgan("dev"));
 // Static Folder for Image and Receipt uploads with CORS headers
 app.use(
     "/uploads",
-    express.static(path.join(process.cwd(), "uploads"), {
+    express.static(baseUploadDir, {
         setHeaders: (res) => {
             res.setHeader("Access-Control-Allow-Origin", "*");
             res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
@@ -47,9 +47,15 @@ app.use("/api/bank-details", bankRoutes);
 app.use("/api/upload", uploadRoutes);
 
 // Health Check
+app.get("/api", (_req, res) => {
+    res.json({ status: "Volt Studio Mobility API Active", version: "1.0.0", timestamp: new Date() });
+});
+
 app.get("/", (_req, res) => {
     res.json({ status: "Volt Studio Mobility API Active", timestamp: new Date() });
 });
 
 // Global Error Handler
 app.use(errorHandler);
+
+export default app;
