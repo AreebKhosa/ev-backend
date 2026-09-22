@@ -74,7 +74,12 @@ export const createCategory = async (req: Request, res: Response) => {
 
         const slug = slugify(name);
         const existing = await prisma.category.findFirst({
-            where: { OR: [{ name: name.trim() }, { slug }] },
+            where: {
+                OR: [
+                    { name: { equals: name.trim(), mode: "insensitive" } },
+                    { slug: { equals: slug, mode: "insensitive" } },
+                ],
+            },
         });
 
         if (existing) {

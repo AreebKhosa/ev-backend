@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import jwt from "jsonwebtoken";
 import { prisma } from "../config/prisma";
 import { transporter } from "../config/mailer";
 import { AuthRequest } from "../middlewares/authMiddleware";
@@ -32,38 +33,75 @@ export const checkoutOrder = async (req: AuthRequest, res: Response) => {
         const receiptFileUrl = `/uploads/receipts/${req.file.filename}`;
         const generatedOrderNo = orderNumber || `VT-${Math.floor(100000 + Math.random() * 900000)}`;
 
+        // Resolve userId: Check req.user, auth header Bearer token, or match by customerEmail
+        let resolvedUserId = req.user?.id || null;
+
+        if (!resolvedUserId && req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+            try {
+                const token = req.headers.authorization.split(" ")[1];
+                const decoded: any = jwt.verify(token, process.env.JWT_SECRET || "volt_ultra_secure_jwt_secret_key_2025");
+                if (decoded?.id) {
+                    const u = await prisma.user.findUnique({ where: { id: decoded.id } });
+                    if (u) resolvedUserId = u.id;
+                }
+            } catch (e) {
+                // Token invalid or expired, continue to email lookup
+            }
+        }
+
+        if (!resolvedUserId && customerEmail) {
+            const existingUser = await prisma.user.findFirst({
+                where: { email: { equals: customerEmail.trim(), mode: "insensitive" } },
+            });
+            if (existingUser) {
+                resolvedUserId = existingUser.id;
+            }
+        }
+
         // Save in PostgreSQL
         const order = await prisma.order.create({
             data: {
                 orderNumber: generatedOrderNo,
-                userId: req.user ? req.user.id : null,
-                customerName,
-                customerEmail,
-                customerPhone,
-                shippingAddress,
-                city,
-                postalCode,
+                userId: resolvedUserId,
+                customerName: customerName || "Customer",
+                customerEmail: customerEmail?.trim() || "",
+                customerPhone: customerPhone || "",
+                shippingAddress: shippingAddress || "",
+                city: city || "",
+                postalCode: postalCode || "",
                 country: country || "United States",
-                subtotal: parseFloat(subtotal),
+                subtotal: parseFloat(subtotal || "0"),
                 discountAmount: parseFloat(discountAmount || "0"),
                 tax: parseFloat(tax || "0"),
-                totalDue: parseFloat(totalDue),
-                senderAccountName,
-                transactionRef,
+                totalDue: parseFloat(totalDue || "0"),
+                senderAccountName: senderAccountName || "",
+                transactionRef: transactionRef || "",
                 receiptFileUrl,
                 status: "PENDING",
                 items: {
-                    create: parsedItems.map((it: any) => ({
-                        productId: it.productId || null,
-                        name: it.name,
-                        colorName: it.color || "Standard",
-                        price: parseFloat(it.price),
-                        quantity: parseInt(it.quantity),
+                    create: (parsedItems || []).map((it: any) => ({
+                        productId: it.productId || it.id || null,
+                        name: it.name || "Electric Vehicle",
+                        colorName: it.color || it.colorName || "Standard",
+                        price: parseFloat(it.price || "0"),
+                        quantity: parseInt(it.quantity || "1"),
                     })),
                 },
             },
-            include: { items: true },
+            include: { items: { include: { product: true } } },
         });
+
+        // Update user profile info (phone, shippingAddress) if linked
+        if (resolvedUserId) {
+            const fullAddress = [shippingAddress, city, postalCode, country].filter(Boolean).join(", ");
+            await prisma.user.update({
+                where: { id: resolvedUserId },
+                data: {
+                    ...(fullAddress ? { shippingAddress: fullAddress } : {}),
+                    ...(customerPhone ? { phone: customerPhone } : {}),
+                },
+            }).catch(() => {});
+        }
 
         // Send Automated Email Confirmation with Receipt details
         try {
